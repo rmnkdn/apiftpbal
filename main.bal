@@ -168,12 +168,24 @@ public function main() returns error? {
     };
 
     LoanAccount loanAccount = check httpEp->/loans/MPZE230(headers);
-    //io:println(loanAccount.loanName);
+    io:println("data retrieved from Api");
 
     LoanAccountExport[] lae = [];
     lae[0] = transform(loanAccount);
 
     check io:fileWriteCsv("/Users/rmani/test.json", lae);
+    io:println("local file created");
+
+    s3:Client s3Ep = check new (config = {
+        accessKeyId: onmoAccessKey,
+        secretAccessKey: onmoSecret,
+        region: "eu-north-1"
+    });
+
+    io:println("s3 connection established");
+
+    check s3Ep->createObject("onmo-integration-file-dev", "test.csv", loanAccount.toJson());
+    io:println("s3 object created");
 
     // This is the problem, where it is failing with error.
     // basically sftp -i /Users/rmani/.ssh/onmo-integration  mani.ram@sftp.staging.onmo.app works, but I couldn't get following to connect.
@@ -192,18 +204,16 @@ public function main() returns error? {
         }
     });
 
-    ftp:FileInfo[] files = check ftpEp->list("/onmo-integration-file/inbound/");
-    io:println(files[0].name);
-
     stream<io:Block, io:Error?> fileStream
         = check io:fileReadBlocksAsStream("/Users/rmani/test.json", 1024);
     check ftpEp->put("/onmo-integration-file/inbound/logFile.txt", fileStream);
     check fileStream.close();
+    io:println("file sftp completed");
 
     return ();
 }
 
-function apiToS3() returns error? {
+public function apis3() returns error? {
 
     http:Client httpEp = check new (url = serviceUrl, config = {
         timeout: 10
@@ -216,16 +226,17 @@ function apiToS3() returns error? {
 
     LoanAccount loanAccount = check httpEp->/loans/MPZE230(headers);
     //io:println(loanAccount.loanName);
-
-    LoanAccountExport[] lae = [];
-    lae[0] = transform(loanAccount);
+    io:println("retrived api response");
 
     s3:Client s3Ep = check new (config = {
         accessKeyId: onmoAccessKey,
-        secretAccessKey: onmoSecret
+        secretAccessKey: onmoSecret,
+        region: "eu-north-1"
     });
 
-    //s3Ep->createObject()
+    io:println("s3 connection established");
+
+    check s3Ep->createObject("onmo-integration-file-dev", "test.csv", loanAccount.toJson());
 
 }
 
