@@ -1,56 +1,13 @@
 import ballerina/ftp;
 import ballerina/http;
 import ballerina/io;
+import ballerinax/aws.s3;
 
 configurable string serviceUrl = ?;
 configurable string coreAdminApikey = ?;
 
-public function main() returns error? {
-
-    http:Client httpEp = check new (url = serviceUrl, config = {
-        timeout: 10
-    });
-    map<string> headers = {
-        "Accept": "application/vnd.mambu.v2+json",
-        "apiKey": coreAdminApikey,
-        "Content-Type": "application/json"
-    };
-
-    LoanAccount loanAccount = check httpEp->/loans/MPZE230(headers);
-    //io:println(loanAccount.loanName);
-
-    LoanAccountExport[] lae = [];
-    lae[0] = transform(loanAccount);
-
-    check io:fileWriteCsv("/Users/rmani/test.json", lae);
-
-    // This is the problem, where it is failing with error.
-    // basically sftp -i /Users/rmani/.ssh/onmo-integration  mani.ram@sftp.staging.onmo.app works, but I couldn't get following to connect.
-    ftp:Client ftpEp = check new (clientConfig = {
-        protocol: ftp:SFTP,
-        host: "sftp.staging.onmo.app",
-        port: 22,
-        auth: {
-            credentials: {
-                username: "mani.ram",
-                password: ""
-            },
-            privateKey: {
-                path: "/Users/rmani/.ssh/onmo-integration"
-            }
-        }
-    });
-
-    ftp:FileInfo[] files = check ftpEp->list("/onmo-integration-file/inbound/");
-    io:println(files[0].name);
-
-    stream<io:Block, io:Error?> fileStream
-        = check io:fileReadBlocksAsStream("/Users/rmani/test.json", 1024);
-    check ftpEp->put("/onmo-integration-file/inbound/logFile.txt", fileStream);
-    check fileStream.close();
-
-    return ();
-}
+configurable string onmoAccessKey = ?;
+configurable string onmoSecret = ?;
 
 type LoanAccountExport record {
     string encodedKey;
@@ -185,7 +142,7 @@ type LoanAccount record {
 
 function transform(LoanAccount loanAccount) returns LoanAccountExport => {
     encodedKey: loanAccount.encodedKey,
-    id: loanAccount.id,
+    id: loanAccount.id + loanAccount.encodedKey,
     accountHolderType: loanAccount.accountHolderType,
     accountHolderKey: loanAccount.accountHolderKey,
     creationDate: loanAccount.creationDate,
@@ -198,4 +155,77 @@ function transform(LoanAccount loanAccount) returns LoanAccountExport => {
     principalPaid: loanAccount.balances.principalPaid,
     principalBalance: loanAccount.balances.principalBalance
 };
+
+public function main() returns error? {
+
+    http:Client httpEp = check new (url = serviceUrl, config = {
+        timeout: 10
+    });
+    map<string> headers = {
+        "Accept": "application/vnd.mambu.v2+json",
+        "apiKey": coreAdminApikey,
+        "Content-Type": "application/json"
+    };
+
+    LoanAccount loanAccount = check httpEp->/loans/MPZE230(headers);
+    //io:println(loanAccount.loanName);
+
+    LoanAccountExport[] lae = [];
+    lae[0] = transform(loanAccount);
+
+    check io:fileWriteCsv("/Users/rmani/test.json", lae);
+
+    // This is the problem, where it is failing with error.
+    // basically sftp -i /Users/rmani/.ssh/onmo-integration  mani.ram@sftp.staging.onmo.app works, but I couldn't get following to connect.
+    ftp:Client ftpEp = check new (clientConfig = {
+        protocol: ftp:SFTP,
+        host: "sftp.staging.onmo.app",
+        port: 22,
+        auth: {
+            credentials: {
+                username: "mani.ram",
+                password: ""
+            },
+            privateKey: {
+                path: "/app/config/onmo-integration-pkey.pem"
+            }
+        }
+    });
+
+    ftp:FileInfo[] files = check ftpEp->list("/onmo-integration-file/inbound/");
+    io:println(files[0].name);
+
+    stream<io:Block, io:Error?> fileStream
+        = check io:fileReadBlocksAsStream("/Users/rmani/test.json", 1024);
+    check ftpEp->put("/onmo-integration-file/inbound/logFile.txt", fileStream);
+    check fileStream.close();
+
+    return ();
+}
+
+function apiToS3() returns error? {
+
+    http:Client httpEp = check new (url = serviceUrl, config = {
+        timeout: 10
+    });
+    map<string> headers = {
+        "Accept": "application/vnd.mambu.v2+json",
+        "apiKey": coreAdminApikey,
+        "Content-Type": "application/json"
+    };
+
+    LoanAccount loanAccount = check httpEp->/loans/MPZE230(headers);
+    //io:println(loanAccount.loanName);
+
+    LoanAccountExport[] lae = [];
+    lae[0] = transform(loanAccount);
+
+    s3:Client s3Ep = check new (config = {
+        accessKeyId: onmoAccessKey,
+        secretAccessKey: onmoSecret
+    });
+
+    //s3Ep->createObject()
+
+}
 
